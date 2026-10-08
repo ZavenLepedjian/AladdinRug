@@ -12,6 +12,18 @@ namespace AladdinRug
     {
         private const float Lx = -0.45f, Ly = -0.55f, Lz = 0.70f;
 
+        /// <summary>The lump that <paramref name="count"/> icons piled into the cell at (cellX, cellY) make; positions are in the picture's own pixels.</summary>
+        public static Blob BlobAt(double cellX, double cellY, int cellW, int cellH, int count)
+        {
+            int n = Math.Min(count, 7);
+            return new Blob
+            {
+                X = (float)(cellX + cellW * 0.5), Y = (float)(cellY + cellH * 0.40),
+                Rx = cellW * (0.30f + 0.015f * Math.Min(count, 6)), Ry = cellH * (0.27f + 0.015f * Math.Min(count, 6)),
+                Height = 6f + 4.5f * n,
+            };
+        }
+
         /// <summary>The lumps for a monitor: one per occupied icon cell, taller where more icons are piled up. Positions are monitor-local pixels.</summary>
         public static List<Blob> BlobsFor(DeskGeometry geo)
         {

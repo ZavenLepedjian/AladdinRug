@@ -15,6 +15,7 @@ namespace AladdinRug
         public double X, Y, Heading, Speed, Phase;
         public readonly double Unit;
         public double Cruise;                       // walking speed, pixels per second
+        public double Accel, Brake;                 // how fast he speeds up and slows down, pixels per second squared
 
         private const double TurnRate = 420;        // degrees per second
         private const double StrideUnits = 62;      // ground covered by one full walking cycle
@@ -23,6 +24,8 @@ namespace AladdinRug
         {
             Unit = unit; X = x; Y = y; Heading = heading;
             Cruise = 150 * unit;
+            Accel = 500 * unit;
+            Brake = 700 * unit;
         }
 
         /// <summary>0 standing, 1 walking at an ordinary pace (more when hurrying).</summary>
@@ -55,9 +58,9 @@ namespace AladdinRug
 
             // walk the way he faces: barely move while turning round, and ease off as he gets close
             double facing = Math.Max(0, Math.Cos(Diff(Heading, want) * Math.PI / 180));
-            double braking = Math.Sqrt(2 * 700 * Unit * dist);
+            double braking = Math.Sqrt(2 * Brake * dist);
             double target = Math.Min(cruise, braking) * facing * facing;
-            double accel = 500 * Unit;
+            double accel = Accel;
             Speed = Speed < target ? Math.Min(target, Speed + accel * dt) : Math.Max(target, Speed - accel * 2 * dt);
 
             double step = Math.Min(dist, Speed * dt);

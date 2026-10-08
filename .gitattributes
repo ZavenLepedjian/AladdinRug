@@ -4,3 +4,7 @@
 *.csproj text eol=crlf
 *.png binary
 *.jpg binary
+*.mp4 binary
+*.webp binary
+*.pdf binary
+samples/desktop/* -text

@@ -7,10 +7,6 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{827E0CD3-B72
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AladdinRug", "src\AladdinRug\AladdinRug.csproj", "{47B5D4A7-DE6A-4182-B5B9-68C1BFCFAB2B}"
 EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tools", "tools", "{07C2787E-EAC7-C090-1BA3-A61EC2A24D84}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SimTest", "tools\SimTest\SimTest.csproj", "{20D365B3-F76C-4480-ACC1-7AE8E25173EA}"
-EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -33,24 +29,11 @@ Global
 		{47B5D4A7-DE6A-4182-B5B9-68C1BFCFAB2B}.Release|x64.Build.0 = Release|Any CPU
 		{47B5D4A7-DE6A-4182-B5B9-68C1BFCFAB2B}.Release|x86.ActiveCfg = Release|Any CPU
 		{47B5D4A7-DE6A-4182-B5B9-68C1BFCFAB2B}.Release|x86.Build.0 = Release|Any CPU
-		{20D365B3-F76C-4480-ACC1-7AE8E25173EA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{20D365B3-F76C-4480-ACC1-7AE8E25173EA}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{20D365B3-F76C-4480-ACC1-7AE8E25173EA}.Debug|x64.ActiveCfg = Debug|Any CPU
-		{20D365B3-F76C-4480-ACC1-7AE8E25173EA}.Debug|x64.Build.0 = Debug|Any CPU
-		{20D365B3-F76C-4480-ACC1-7AE8E25173EA}.Debug|x86.ActiveCfg = Debug|Any CPU
-		{20D365B3-F76C-4480-ACC1-7AE8E25173EA}.Debug|x86.Build.0 = Debug|Any CPU
-		{20D365B3-F76C-4480-ACC1-7AE8E25173EA}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{20D365B3-F76C-4480-ACC1-7AE8E25173EA}.Release|Any CPU.Build.0 = Release|Any CPU
-		{20D365B3-F76C-4480-ACC1-7AE8E25173EA}.Release|x64.ActiveCfg = Release|Any CPU
-		{20D365B3-F76C-4480-ACC1-7AE8E25173EA}.Release|x64.Build.0 = Release|Any CPU
-		{20D365B3-F76C-4480-ACC1-7AE8E25173EA}.Release|x86.ActiveCfg = Release|Any CPU
-		{20D365B3-F76C-4480-ACC1-7AE8E25173EA}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{47B5D4A7-DE6A-4182-B5B9-68C1BFCFAB2B} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
-		{20D365B3-F76C-4480-ACC1-7AE8E25173EA} = {07C2787E-EAC7-C090-1BA3-A61EC2A24D84}
 	EndGlobalSection
 EndGlobal

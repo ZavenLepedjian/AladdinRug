@@ -7,6 +7,12 @@ files on your desktop into folders and sweep the folders under the rug. And a ti
 
 ![The four rugs](docs/images/styles.jpg)
 
+## Watch it
+
+[![AladdinRug in 15 seconds: lift and fold the rug, the merchant rolls it up, sorts the desktop and sweeps folders under it. Click for the full 74-second video.](docs/promo/AladdinRug-preview.webp)](docs/promo/AladdinRug-promo.mp4)
+
+Click the picture for the [full 74-second video](docs/promo/AladdinRug-promo.mp4) (20 MB, no sound). It is not a screen recording: every frame is drawn by the app's own code on a made-up desktop, so nothing from a real computer appears in it. See [docs/promo](docs/promo/README.md) for what is in it.
+
 ## Requirements
 
 - Windows 10 or 11 (x64)
@@ -53,6 +59,18 @@ To work on it, open `AladdinRug.sln` in Visual Studio 2022 (or use `dotnet build
 ![The merchant's poses: walking, pushing, tying, carrying files, sweeping](docs/images/merchant.png)
 
 ![Folders swept under the rug](docs/images/stuffed.jpg)
+
+### Try it on sample files
+
+Want to watch the merchant sort a desktop without risking your own files? [`samples/`](samples/README.md) has 40 small, harmless files (PDFs, Word and Excel documents, pictures, text, CSV and more). This puts them on your Desktop, and takes them off again afterwards:
+
+```powershell
+.\samples\Add-SampleFiles.ps1
+```
+
+```powershell
+.\samples\Add-SampleFiles.ps1 -Remove
+```
 
 ### What it does to your files, and how to get everything back
 
@@ -129,8 +147,9 @@ src/AladdinRug/
   Merchant/   the merchant: art, motion, rolling, sorting files, sweeping folders
   Platform/   Win32 calls
   Dev/        developer modes (pictures and measurements, see below)
-tools/SimTest/  console harness for the physics and the file sorter
+samples/        40 harmless sample files, and a script to put them on the Desktop
 docs/images/    pictures for this page
+docs/promo/     the promo video, its preview and poster
 ```
 
 ## Developer tools
@@ -147,25 +166,6 @@ AladdinRug.exe --selftest report.txt
 
 `--sequence` shows the merchant rolling the rug frame by frame, and `--merchant` draws a sheet of his poses.
 `--selftest` puts a temporary rug on the desktop for a few seconds and writes how smoothly it ran.
-
-`tools/SimTest` checks things without a desktop:
-
-```bash
-dotnet run --project tools/SimTest -c Release -- organize %TEMP%\rugtest
-```
-
-```bash
-dotnet run --project tools/SimTest -c Release -- stress %TEMP%\rugstress
-```
-
-```bash
-dotnet run --project tools/SimTest -c Release -- bench
-```
-
-- `organize` sorts and un-sorts made-up files in a scratch folder and checks the result. Its exit code is the number of failures.
-- `stress` runs wild gestures and reports cracks, stretch, shear and folds, and saves contact sheets.
-- `bench` times a dragging frame.
-- `scenes` and `dust` save pictures.
 
 To try sorting and sweeping on the real desktop without touching your own files, put a few throwaway files on the
 desktop with an unusual extension (say `zz_test_1.rugA`, `zz_test_2.rugA`, `zz_test_3.rugB`, `zz_test_4.rugB`) and start the

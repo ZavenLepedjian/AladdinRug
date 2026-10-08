@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Windows;
@@ -1204,16 +1205,30 @@ namespace AladdinRug
             using (FileStream fs = File.Create(path)) enc.Save(fs);
         }
 
+        /// <summary>One picture of the merchant rolling the rug: the rug's own layer, and where the merchant stands (monitor pixels).</summary>
+        internal struct RollFrame
+        {
+            public BitmapSource Layer;             // the rug window's picture
+            public Rect LayerBounds;               // where it goes on the monitor
+            public MerchantPose Pose;
+            public double MerchantX, MerchantY, Unit;
+            public double Time;
+            public bool MerchantHere;
+        }
+
+        /// <summary>The flat rug's picture (face with shadow) and where it lies on the monitor, for the dev tools.</summary>
+        internal BitmapSource FlatPicture => _art.Front;
+        internal RugArt.Images Art => _art;
+        internal Rect FlatBounds => new Rect(_rugX - _geo.X, _rugY - _geo.Y, _rugW, _rugH);
+
         /// <summary>
-        /// Plays the merchant rolling the rug up (or out) in made-up time, with no window, and saves the monitor-sized
-        /// pictures at chosen moments: AladdinRug.exe --sequence up|out folder
+        /// Plays the merchant rolling the rug up (or out) in made-up time, with no window, one frame per step of
+        /// <paramref name="dt"/> seconds, until he has walked away. Used by the dev tools and the promo video.
         /// </summary>
-        public void RenderSequence(string kind, string dir)
+        internal IEnumerable<RollFrame> PlayRoll(bool up, double dt)
         {
             _ = new WindowInteropHelper(this).EnsureHandle();
             _compact = false;
-            bool up = kind == "up";
-            Directory.CreateDirectory(dir);
 
             long clock = 0;
             Anim.Now = () => clock;
@@ -1226,51 +1241,72 @@ namespace AladdinRug
             _rollTarget = up ? 1 : 0;
             _pushStarted = false;
 
-            double[] shots = up ? new[] { 0.3, 0.9, 1.5, 2.1, 3.0, 3.9, 4.8, 5.4, 6.1, 7.0 } : new[] { 0.3, 0.9, 1.5, 2.1, 3.0, 3.9, 4.8, 5.4, 6.1, 7.0 };
-            int next = 0;
-            double dt = 1.0 / 60;
-            for (int f = 0; f < 60 * 9 && next < shots.Length; f++)
+            try
             {
-                double t = f * dt;
-                clock = (long)(t * Stopwatch.Frequency);
-                if (_rollAnim.Active) _rollAnim.Step(clock);
-                double v = _rollAnim.Value;
-                ApplyProgress(v);
-                RollView view = ViewAt(v);
-                view.Fraction = up ? v : 1 - v;
-                view.JobDone = _pushStarted && !_rollAnim.Active;
-                crew.Update(dt, view);
-                if (crew.PushRequested && !_pushStarted)
+                for (int f = 0; f < 60 * 30; f++)
                 {
-                    _pushStarted = true;
-                    _rollAnim.Start(_rollTarget, up ? CrewRollUpSeconds : CrewUnrollSeconds);
+                    double t = f * dt;
+                    clock = (long)(t * Stopwatch.Frequency);
+                    if (_rollAnim.Active) _rollAnim.Step(clock);
+                    double v = _rollAnim.Value;
+                    ApplyProgress(v);
+                    RollView view = ViewAt(v);
+                    view.Fraction = up ? v : 1 - v;
+                    view.JobDone = _pushStarted && !_rollAnim.Active;
+                    crew.Update(dt, view);
+                    if (crew.PushRequested && !_pushStarted)
+                    {
+                        _pushStarted = true;
+                        _rollAnim.Start(_rollTarget, up ? CrewRollUpSeconds : CrewUnrollSeconds);
+                    }
+
+                    var size = new Size(_widthDip, _heightDip);
+                    _stage.Measure(size);
+                    _stage.Arrange(new Rect(size));
+                    _stage.UpdateLayout();
+                    var layer = new RenderTargetBitmap(_rugW, _rugH, 96 * _wpf, 96 * _wpf, PixelFormats.Pbgra32);
+                    layer.Render(_stage);
+                    layer.Freeze();
+
+                    yield return new RollFrame
+                    {
+                        Layer = layer, LayerBounds = new Rect(_rugX - _geo.X, _rugY - _geo.Y, _rugW, _rugH), Pose = crew.Pose,
+                        MerchantX = crew.X - _geo.X, MerchantY = crew.Y - _geo.Y, Unit = crew.Unit, Time = t, MerchantHere = crew.Active,
+                    };
+                    if (!crew.Active && f > 30) yield break;
                 }
-                if (t >= shots[next])
-                {
-                    SaveSequenceFrame(Path.Combine(dir, kind + "_" + next + ".png"), crew);
-                    Console.WriteLine("{0}: t={1:F1}s roll at {2:F2}, merchant at {3:F0},{4:F0}, push started {5}", kind, t, v, crew.X, crew.Y, _pushStarted);
-                    next++;
-                }
-                if (!crew.Active && f > 30) break;
             }
-            Anim.Now = Stopwatch.GetTimestamp;
+            finally { Anim.Now = Stopwatch.GetTimestamp; }
         }
 
-        private void SaveSequenceFrame(string path, Roller crew)
+        /// <summary>
+        /// Plays the merchant rolling the rug up (or out) in made-up time, with no window, and saves the monitor-sized
+        /// pictures at chosen moments: AladdinRug.exe --sequence up|out folder
+        /// </summary>
+        public void RenderSequence(string kind, string dir)
         {
-            var size = new Size(_widthDip, _heightDip);
-            _stage.Measure(size);
-            _stage.Arrange(new Rect(size));
-            _stage.UpdateLayout();
-            var layer = new RenderTargetBitmap(_rugW, _rugH, 96 * _wpf, 96 * _wpf, PixelFormats.Pbgra32);
-            layer.Render(_stage);
+            bool up = kind == "up";
+            Directory.CreateDirectory(dir);
+            double[] shots = { 0.3, 0.9, 1.5, 2.1, 3.0, 3.9, 4.8, 5.4, 6.1, 7.0 };
+            int next = 0;
+            foreach (RollFrame frame in PlayRoll(up, 1.0 / 60))
+            {
+                if (next >= shots.Length) break;
+                if (frame.Time < shots[next]) continue;
+                SaveSequenceFrame(Path.Combine(dir, kind + "_" + next + ".png"), frame);
+                Console.WriteLine("{0}: t={1:F1}s, merchant at {2:F0},{3:F0}", kind, frame.Time, frame.MerchantX, frame.MerchantY);
+                next++;
+            }
+        }
 
+        private void SaveSequenceFrame(string path, RollFrame frame)
+        {
             var visual = new DrawingVisual();
             using (DrawingContext dc = visual.RenderOpen())
             {
                 dc.DrawRectangle(new SolidColorBrush(Color.FromRgb(0x3A, 0x4A, 0x5C)), null, new Rect(0, 0, _geo.W, _geo.H));
-                dc.DrawImage(layer, new Rect(_rugX - _geo.X, _rugY - _geo.Y, _rugW, _rugH));
-                MerchantArt.Draw(dc, crew.Pose, crew.X - _geo.X, crew.Y - _geo.Y, crew.Unit);
+                dc.DrawImage(frame.Layer, frame.LayerBounds);
+                MerchantArt.Draw(dc, frame.Pose, frame.MerchantX, frame.MerchantY, frame.Unit);
             }
             var bmp = new RenderTargetBitmap(_geo.W, _geo.H, 96, 96, PixelFormats.Pbgra32);
             bmp.Render(visual);
