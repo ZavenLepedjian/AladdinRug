@@ -10,7 +10,7 @@ files on your desktop into folders and sweep the folders under the rug. And a ti
 ## Requirements
 
 - Windows 10 or 11 (x64)
-- [.NET 8 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/8.0) to run it, or the .NET 8 SDK (or newer) to build it
+- [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0) to run it, or the .NET 10 SDK to build it
 
 ## Build and run
 
