@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    A console harness for the parts of Aladdin Rug that can be checked without a desktop: the cloth physics and drawing
+    (stress gestures, benchmark, dust) and the file sorter (on a scratch folder, never the real desktop).
+    It compiles the app's own sources, so it always tests the current code.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <PlatformTarget>x64</PlatformTarget>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RootNamespace>AladdinRug</RootNamespace>
+    <StartupObject>AladdinRug.SimTestMain</StartupObject>
+    <ApplicationManifest>..\..\src\AladdinRug\app.manifest</ApplicationManifest>
+    <NoWarn>$(NoWarn);WFAC010</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\..\src\AladdinRug\**\*.cs" Exclude="..\..\src\AladdinRug\obj\**;..\..\src\AladdinRug\bin\**" LinkBase="App" />
+  </ItemGroup>
+
+</Project>

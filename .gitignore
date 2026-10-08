@@ -1,0 +1,17 @@
+# Build output
+bin/
+obj/
+dist/
+publish/
+
+# IDE and user files
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.rsuser
+
+# OS
+Thumbs.db
+desktop.ini
