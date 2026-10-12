@@ -9,6 +9,7 @@ namespace AladdinRug
     ///   AladdinRug.exe --sequence up|out folder        (the merchant rolling the rug, frame by frame)
     ///   AladdinRug.exe --merchant out.png              (a sheet of the merchant's poses)
     ///   AladdinRug.exe --simtest folder [scenario]     (cloth scenarios: middle, tent, corner, edge, drag)
+    ///   AladdinRug.exe --collisiontest report.txt      (synthetic collision checks, no windows or desktop access)
     ///   AladdinRug.exe --selftest report.txt           (a temporary rug on the desktop, timing how smoothly it runs)
     /// </code>
     /// </summary>
@@ -31,6 +32,13 @@ namespace AladdinRug
                 case "--simtest" when args.Length >= 2:
                     SimDemo.Run(args[1], args.Length > 2 ? args[2] : null);
                     return 0;
+                case "--collisiontest":
+                    if (args.Length != 2)
+                    {
+                        System.Console.Error.WriteLine("Usage: AladdinRug.exe --collisiontest report.txt");
+                        return 2;
+                    }
+                    return CollisionChecks.Run(args[1]);
                 case "--selftest" when args.Length >= 2:
                     var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
                     RugWindow.RunSelfTest(args[1]);

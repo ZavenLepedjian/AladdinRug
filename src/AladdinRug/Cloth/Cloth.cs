@@ -43,10 +43,7 @@ namespace AladdinRug
         private readonly Spring[] _threads;             // just the woven threads (the neighbours along each row and column), for limiting stretch
         private readonly float _w, _h;                  // the room the rug can move in
 
-        // collision grid
-        private readonly float _cell;
-        private readonly int _gw, _gh;
-        private readonly int[] _cellStart, _cellItems, _fill, _cellX, _cellY, _gridI, _gridJ;
+        private readonly ClothCollision _collision;
 
         // hand
         private int[] _held = new int[0];
@@ -82,7 +79,6 @@ namespace AladdinRug
             _px = new float[Count]; _py = new float[Count]; _pz = new float[Count];
             _inv = new float[Count];
             _offX = new float[Count]; _offY = new float[Count];
-            _gridI = new int[Count]; _gridJ = new int[Count];
             _edge = new bool[Count];
             _vdown = new float[Count];
 
@@ -98,7 +94,6 @@ namespace AladdinRug
                     _inv[k] = 1;
                     _offX[k] = (i - (Nx - 1) / 2f) * Sx;
                     _offY[k] = (j - (Ny - 1) / 2f) * Sy;
-                    _gridI[k] = i; _gridJ[k] = j;
                     _edge[k] = i <= 1 || j <= 1 || i >= Nx - 2 || j >= Ny - 2;
                 }
 
@@ -126,13 +121,7 @@ namespace AladdinRug
             _springs = springs.ToArray();
             _threads = threads.ToArray();
 
-            _cell = Math.Min(Sx, Sy) * 1.6f;
-            _gw = (int)(roomW / _cell) + 2;
-            _gh = (int)(roomH / _cell) + 2;
-            _cellStart = new int[_gw * _gh + 1];
-            _cellItems = new int[Count];
-            _fill = new int[_gw * _gh];
-            _cellX = new int[Count]; _cellY = new int[Count];
+            _collision = new ClothCollision(Nx, Ny);
         }
 
         public float CentreX { get { float s = 0; for (int i = 0; i < Count; i++) s += X[i]; return s / Count; } }
@@ -205,7 +194,7 @@ namespace AladdinRug
 
         // ------------------------------------------------------------------ simulation
 
-        /// <summary>Milliseconds spent so far in: moving, building the grid, springs, stacking, settling (for tests).</summary>
+        /// <summary>Milliseconds spent so far in: moving, reserved, springs, surface contact/settling, reserved (for tests).</summary>
         public static readonly double[] Profile = new double[5];
         private static long Tick() => System.Diagnostics.Stopwatch.GetTimestamp();
         private static double Ms(long from) => (Tick() - from) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
@@ -214,28 +203,38 @@ namespace AladdinRug
         {
             ImpactCount = 0;
             _cx = CentreX; _cy = CentreY;
-            float h = dt / Substeps;
+            float h = dt / Substeps, moved = 0;
             for (int s = 0; s < Substeps; s++)
             {
+                _collision.Begin(X, Y, Z);
+                float handX = _hx, handY = _hy, lift = _lift;
                 long t = Tick();
                 MoveHandAndPoints(h);
                 Profile[0] += Ms(t); t = Tick();
-                BuildGrid();
-                Profile[1] += Ms(t);
-                for (int it = 0; it < Iterations; it++)
-                {
-                    t = Tick();
-                    SolveSprings();
-                    Profile[2] += Ms(t);
-                    if (_raised && it == Iterations - 1) { t = Tick(); StackLayers(); Profile[3] += Ms(t); }
-                }
+                for (int it = 0; it < Iterations; it++) SolveSprings();
                 LimitStrain();
-                if (_raised) StackLayers();           // the limit may have nudged layers into each other
-                t = Tick();
-                Settle();
-                Profile[4] += Ms(t);
+                Profile[2] += Ms(t); t = Tick();
+                for (int contact = 0; contact < 2; contact++)
+                {
+                    _collision.Project(X, Y, Z, _inv, Layer);
+                    // Surface contact can stretch the weave; keep the two constraints coupled.
+                    LimitStrain();
+                    Settle(contact == 0);     // repeat the clamps; friction and dust still run once per substep
+                }
+                // All springs, contact projections and floor/wall clamps are included in this swept move.
+                // There is no later positional correction that can undo the acceptance check.
+                float accepted = _collision.LimitMotion(X, Y, Z);
+                if (accepted < 1)
+                {
+                    _hx = handX + (_hx - handX) * accepted;
+                    _hy = handY + (_hy - handY) * accepted;
+                    _lift = lift + (_lift - lift) * accepted;
+                    Freeze();
+                }
+                moved += _collision.AcceptedDistance(X, Y, Z, _inv);
+                Profile[3] += Ms(t);
             }
-            Measure();
+            Measure(moved);
         }
 
         // Pulling the rug along the floor, you hold it low and it slides; pushing a part of it back over the rest, you
@@ -334,77 +333,6 @@ namespace AladdinRug
             }
         }
 
-        // Where one part of the rug lies over another, keep the upper part up. Points that are far apart on the
-        // rug but close together on the floor are a fold; the higher one is held above the lower.
-        private bool _raised;                   // is any part of the rug up off the floor (so layers could be stacking)?
-
-        private void BuildGrid()
-        {
-            float top = 0;
-            for (int i = 0; i < Count; i++) if (Z[i] > top) top = Z[i];
-            _raised = top > Floor + Layer * 0.6f;
-            if (!_raised && !_gridForPenetrations) return;                  // lying flat: nothing can be stacked, skip the work
-
-            Array.Clear(_cellStart, 0, _cellStart.Length);
-            float inv = 1f / _cell;
-            for (int i = 0; i < Count; i++)
-            {
-                int cx = (int)(X[i] * inv), cy = (int)(Y[i] * inv);
-                cx = cx < 0 ? 0 : cx >= _gw ? _gw - 1 : cx;
-                cy = cy < 0 ? 0 : cy >= _gh ? _gh - 1 : cy;
-                _cellX[i] = cx; _cellY[i] = cy;
-                _cellStart[cy * _gw + cx + 1]++;
-            }
-            for (int c = 0; c < _gw * _gh; c++) _cellStart[c + 1] += _cellStart[c];
-            Array.Clear(_fill, 0, _fill.Length);
-            for (int i = 0; i < Count; i++)
-            {
-                int c = _cellY[i] * _gw + _cellX[i];
-                _cellItems[_cellStart[c] + _fill[c]++] = i;
-            }
-        }
-
-        private bool _gridForPenetrations;
-
-        private void StackLayers()
-        {
-            float reach2 = (Math.Min(Sx, Sy) * 1.5f) * (Math.Min(Sx, Sy) * 1.5f);
-            fixed (float* x = X, y = Y, z = Z, inv = _inv)
-            fixed (int* start = _cellStart, items = _cellItems, gi = _gridI, gj = _gridJ, cxs = _cellX, cys = _cellY)
-            {
-                for (int i = 0; i < Count; i++)
-                {
-                    int cx = cxs[i], cy = cys[i], ii = gi[i], ij = gj[i];
-                    float xi = x[i], yi = y[i];
-                    int y0 = cy > 0 ? cy - 1 : 0, y1 = cy < _gh - 1 ? cy + 1 : _gh - 1;
-                    int x0 = cx > 0 ? cx - 1 : 0, x1 = cx < _gw - 1 ? cx + 1 : _gw - 1;
-                    for (int ny = y0; ny <= y1; ny++)
-                        for (int nx = x0; nx <= x1; nx++)
-                        {
-                            int c = ny * _gw + nx;
-                            for (int n = start[c]; n < start[c + 1]; n++)
-                            {
-                                int j = items[n];
-                                if (j <= i) continue;
-                                float dx = xi - x[j], dy = yi - y[j];
-                                if (dx * dx + dy * dy > reach2) continue;
-                                int di = gi[j] - ii, dj = gj[j] - ij;
-                                if (di >= -2 && di <= 2 && dj >= -2 && dj <= 2) continue;     // neighbours on the rug itself
-
-                                float dz = z[i] - z[j];
-                                float over = Layer - (dz < 0 ? -dz : dz);
-                                if (over <= 0) continue;
-
-                                int top = dz >= 0 ? i : j, low = dz >= 0 ? j : i;
-                                float topShare = inv[top] == 0 ? 0 : (inv[low] == 0 || z[low] <= Floor + 0.5f ? 1f : 0.5f);
-                                z[top] += over * topShare;
-                                z[low] -= over * (1 - topShare);
-                            }
-                        }
-                }
-            }
-        }
-
         // The weave can't be stretched: whatever the springs left over, hold every thread to a hair over its length.
         // Done in both directions along the threads so the correction travels from the hand out to the far end.
         private void LimitStrain()
@@ -432,7 +360,7 @@ namespace AladdinRug
         }
 
         // The floor holds the rug up and grips it; the walls of the room keep it on screen.
-        private void Settle()
+        private void Settle(bool applyFriction)
         {
             float grip = Floor + 2 * Layer + 1;
             float friction = _feel.Friction;
@@ -443,7 +371,7 @@ namespace AladdinRug
                     if (z[i] < Floor)
                     {
                         float fall = _vdown[i];
-                        if (fall > ImpactSpeed && _edge[i] && ImpactCount < ImpX.Length) NoteImpact(x[i], y[i], fall);
+                        if (applyFriction && fall > ImpactSpeed && _edge[i] && ImpactCount < ImpX.Length) NoteImpact(x[i], y[i], fall);
                         z[i] = Floor; pz[i] = Floor;
                     }
                     if (inv[i] == 0) continue;
@@ -451,7 +379,7 @@ namespace AladdinRug
                     if (x[i] < 2) x[i] = 2; else if (x[i] > _w - 2) x[i] = _w - 2;
                     if (y[i] < 2) y[i] = 2; else if (y[i] > _h - 2) y[i] = _h - 2;
 
-                    if (z[i] < grip)    // lying on the floor or on other rug: heavy wool doesn't slide easily
+                    if (applyFriction && z[i] < grip)    // lying on the floor or on other rug: heavy wool doesn't slide easily
                     {
                         px[i] = x[i] - (x[i] - px[i]) * friction;
                         py[i] = y[i] - (y[i] - py[i]) * friction;
@@ -469,18 +397,10 @@ namespace AladdinRug
             ImpP[k] = Math.Min(1f, (fall - ImpactSpeed) / 0.9f);
         }
 
-        private void Measure()
+        private void Measure(float acceptedDistance)
         {
-            float total = 0;
-            int n = 0;
-            for (int i = 0; i < Count; i++)
-            {
-                if (_inv[i] == 0) continue;
-                float dx = X[i] - _px[i], dy = Y[i] - _py[i], dz = Z[i] - _pz[i];
-                total += MathF.Sqrt(dx * dx + dy * dy + dz * dz);
-                n++;
-            }
-            Speed = n == 0 ? 0 : total / n * Substeps;     // average distance moved per frame
+            // Contact damping resets Verlet velocity; sleep must use the movement actually accepted.
+            Speed = acceptedDistance;
 
             float stretch = 1f;                            // the most stretched thread
             foreach (Spring sp in _threads)
@@ -559,32 +479,8 @@ namespace AladdinRug
             p95 = n == 0 ? 0 : dev[(int)(n * 0.95)];
         }
 
-        /// <summary>How many pairs of points from different parts of the rug are sitting inside each other (should be ~0).</summary>
-        public int Penetrations()
-        {
-            _gridForPenetrations = true;
-            BuildGrid();
-            _gridForPenetrations = false;
-            float reach2 = (Math.Min(Sx, Sy) * 1.0f) * (Math.Min(Sx, Sy) * 1.0f);
-            int count = 0;
-            for (int i = 0; i < Count; i++)
-            {
-                int cx = _cellX[i], cy = _cellY[i], gi = _gridI[i], gj = _gridJ[i];
-                for (int ny = Math.Max(0, cy - 1); ny <= Math.Min(_gh - 1, cy + 1); ny++)
-                    for (int nx = Math.Max(0, cx - 1); nx <= Math.Min(_gw - 1, cx + 1); nx++)
-                    {
-                        int c = ny * _gw + nx;
-                        for (int n = _cellStart[c]; n < _cellStart[c + 1]; n++)
-                        {
-                            int j = _cellItems[n];
-                            if (j <= i || (Math.Abs(_gridI[j] - gi) <= 3 && Math.Abs(_gridJ[j] - gj) <= 3)) continue;
-                            float dx = X[i] - X[j], dy = Y[i] - Y[j], dz = Z[i] - Z[j];
-                            if (dx * dx + dy * dy < reach2 && Math.Abs(dz) < Layer * 0.55f) count++;
-                        }
-                    }
-            }
-            return count;
-        }
+        /// <summary>How many nonadjacent triangle surfaces intersect (should be zero).</summary>
+        public int Penetrations() => _collision.Intersections(X, Y, Z);
 
         /// <summary>Stop all motion where it lies (the rug has come to rest).</summary>
         public void Freeze()
