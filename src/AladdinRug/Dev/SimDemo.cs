@@ -287,9 +287,9 @@ namespace AladdinRug
                 long t2 = System.Diagnostics.Stopwatch.GetTimestamp();
                 if (f >= 20) { sim += t1 - t0; draw += t2 - t1; }
             }
-            Console.WriteLine("  physics breakdown per step (ms): move {0:F2}, grid {1:F2}, springs {2:F2}, stacking {3:F2}, settle {4:F2}",
-                Cloth.Profile[0] / (frames + 20), Cloth.Profile[1] / (frames + 20), Cloth.Profile[2] / (frames + 20), Cloth.Profile[3] / (frames + 20), Cloth.Profile[4] / (frames + 20));
-            Console.WriteLine("  drawing breakdown per frame (ms): smooth {0:F2}, clear {1:F2}, sort {2:F2}, pixels {3:F2}, shadows {4:F2}",
+            Console.WriteLine("  physics breakdown per step (ms): move {0:F2}, springs {1:F2}, surface/settling {2:F2}",
+                Cloth.Profile[0] / (frames + 20), Cloth.Profile[2] / (frames + 20), Cloth.Profile[3] / (frames + 20));
+            Console.WriteLine("  drawing breakdown per frame (ms): subdivide {0:F2}, clear {1:F2}, sort {2:F2}, pixels {3:F2}, shadows {4:F2}",
                 ClothRenderer.Profile[0] / (frames + 20), ClothRenderer.Profile[1] / (frames + 20), ClothRenderer.Profile[2] / (frames + 20), ClothRenderer.Profile[3] / (frames + 20), ClothRenderer.Profile[4] / (frames + 20));
             double ms = 1000.0 / System.Diagnostics.Stopwatch.Frequency;
             Console.WriteLine("per frame while dragging: physics {0:F1} ms + drawing {1:F1} ms = {2:F1} ms  ({3:F0} frames/second possible)",

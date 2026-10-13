@@ -5,9 +5,8 @@ using System.Windows;
 namespace AladdinRug
 {
     /// <summary>
-    /// Draws the cloth rug into a pixel buffer. The simulated points are first smoothed into a finer surface (so
-    /// folds and edges curve instead of showing straight facets); every cell of that surface is two lit, textured
-    /// triangles; folded-over parts show the underside; and shadows are cast from the rug's height, so a lifted
+    /// Draws the cloth rug into a pixel buffer. The simulated triangles are subdivided into a finer surface;
+    /// every cell of that surface is two lit, textured triangles; folded-over parts show the underside; and shadows are cast from the rug's height, so a lifted
     /// flap darkens the floor and the rug beneath it. Done on the CPU, in parallel, because a transparent window
     /// needs real per-pixel alpha.
     ///
@@ -170,10 +169,7 @@ namespace AladdinRug
             return new Int32Rect(x0, y0, x1 - x0, y1 - y0);
         }
 
-        // ------------------------------------------------------------------ the smoothed surface
-
-        // Catmull-Rom halfway point between p1 and p2.
-        private static float Mid(float p0, float p1, float p2, float p3) => (-p0 + 9 * p1 + 9 * p2 - p3) * (1f / 16f);
+        // ------------------------------------------------------------------ the subdivided surface
 
         private float At(float[] a, int i, int j)
         {
@@ -204,16 +200,10 @@ namespace AladdinRug
                         float[] s = src[ch];
                         float v;
                         if (!oddX && !oddY) v = At(s, i, j);
-                        else if (oddX && !oddY) v = Mid(At(s, i - 1, j), At(s, i, j), At(s, i + 1, j), At(s, i + 2, j));
-                        else if (!oddX) v = Mid(At(s, i, j - 1), At(s, i, j), At(s, i, j + 1), At(s, i, j + 2));
-                        else
-                        {
-                            float r0 = Mid(At(s, i - 1, j - 1), At(s, i, j - 1), At(s, i + 1, j - 1), At(s, i + 2, j - 1));
-                            float r1 = Mid(At(s, i - 1, j), At(s, i, j), At(s, i + 1, j), At(s, i + 2, j));
-                            float r2 = Mid(At(s, i - 1, j + 1), At(s, i, j + 1), At(s, i + 1, j + 1), At(s, i + 2, j + 1));
-                            float r3 = Mid(At(s, i - 1, j + 2), At(s, i, j + 2), At(s, i + 1, j + 2), At(s, i + 2, j + 2));
-                            v = Mid(r0, r1, r2, r3);
-                        }
+                        else if (oddX && !oddY) v = (At(s, i, j) + At(s, i + 1, j)) * 0.5f;
+                        else if (!oddX) v = (At(s, i, j) + At(s, i, j + 1)) * 0.5f;
+                        // Stay on the cloth's diagonal instead of inventing a different surface.
+                        else v = (At(s, i + 1, j) + At(s, i, j + 1)) * 0.5f;
                         dstArr[ch][k] = v;
                     }
                 }

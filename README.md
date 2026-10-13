@@ -126,7 +126,7 @@ folder it was built in once you've moved to the new one.
   and the weave resists shearing, so the rug stays a rug. It lies on a floor with friction, layers stack when it
   folds, and the hand lifts a handful low (to drag) or high (to fold) depending on which way you move. Nothing is
   scripted: the bunching and folds come from the physics.
-- **Drawing** (`Cloth/ClothRenderer.cs`): the points are smoothed into a finer surface and drawn as lit, textured
+- **Drawing** (`Cloth/ClothRenderer.cs`): the physical triangles are subdivided into a finer surface and drawn as lit, textured
   triangles on the CPU, in parallel, with a depth test, the underside on folded parts, and soft shadows from the rug's
   height. Physics, drawing and putting pixels on screen run on three threads (`Cloth/ClothEngine.cs`). A rug lying
   flat is just a picture: no simulation runs until you pick it up.
@@ -162,10 +162,12 @@ AladdinRug.exe --sequence up|out out-folder
 AladdinRug.exe --merchant out.png
 AladdinRug.exe --simtest out-folder [middle|tent|corner|edge|drag]
 AladdinRug.exe --selftest report.txt
+AladdinRug.exe --collisiontest report.txt
 ```
 
 `--sequence` shows the merchant rolling the rug frame by frame, and `--merchant` draws a sheet of his poses.
 `--selftest` puts a temporary rug on the desktop for a few seconds and writes how smoothly it ran.
+`--collisiontest` runs synthetic cloth checks without a window. See [collision checks and limits](docs/CLOTH_COLLISION.md).
 
 To try sorting and sweeping on the real desktop without touching your own files, put a few throwaway files on the
 desktop with an unusual extension (say `zz_test_1.rugA`, `zz_test_2.rugA`, `zz_test_3.rugB`, `zz_test_4.rugB`) and start the

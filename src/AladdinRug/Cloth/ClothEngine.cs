@@ -128,15 +128,27 @@ namespace AladdinRug
 
         public void BeginFlatten(float roomW, float roomH)
         {
-            lock (_wakeLock) { _paused = true; _awake.Reset(); }
-            lock (_clothLock) Cloth.BeginFlatten(0, 0, roomW, roomH);
+            lock (_clothLock)
+            {
+                lock (_wakeLock) { _paused = true; _awake.Reset(); }
+                Cloth.BeginFlatten(0, 0, roomW, roomH);
+            }
         }
 
         public void FlattenStep(float t)
         {
-            lock (_clothLock) { Cloth.Flatten(t); Cloth.CopyPositions(_snapX, _snapY, _snapZ); }
-            lock (_snapLock) _snapFresh = true;
+            lock (_clothLock) { Cloth.Flatten(t); CaptureSnapshot(); }
             _drawNow.Set();
+        }
+
+        // Caller holds _clothLock. All axes and freshness are published as one drawing snapshot.
+        private void CaptureSnapshot()
+        {
+            lock (_snapLock)
+            {
+                Cloth.CopyPositions(_snapX, _snapY, _snapZ);
+                _snapFresh = true;
+            }
         }
 
         // ------------------------------------------------------------------ physics thread
@@ -164,15 +176,15 @@ namespace AladdinRug
                 float speed;
                 lock (_clothLock)
                 {
+                    if (_paused) continue;        // a worker may already have passed the wake event
                     Cloth.Step(Step);
                     if (Cloth.ImpactCount > 0) _dust.FromCloth(Cloth);
                     held = Cloth.IsHeld;
                     speed = Cloth.Speed;
-                    Cloth.CopyPositions(_snapX, _snapY, _snapZ);
+                    CaptureSnapshot();
                 }
                 _dust.Step(Step);
                 StatPhysics?.Add((Stopwatch.GetTimestamp() - t0) * 1000.0 / Stopwatch.Frequency);
-                lock (_snapLock) _snapFresh = true;
                 _drawNow.Set();
 
                 if (held || speed > 0.04f || _dust.Active) { calm = 0; continue; }     // dust still in the air keeps the picture moving
@@ -182,9 +194,8 @@ namespace AladdinRug
                 lock (_clothLock)
                 {
                     Cloth.Freeze();
-                    Cloth.CopyPositions(_snapX, _snapY, _snapZ);
+                    CaptureSnapshot();
                 }
-                lock (_snapLock) _snapFresh = true;
                 _drawNow.Set();
                 lock (_wakeLock)
                 {
