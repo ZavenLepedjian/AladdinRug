@@ -31,6 +31,9 @@ namespace AladdinRug
         /// <summary>Lumps under the rug (screen-fixed, so they stay with what's under the rug when the rug is moved).</summary>
         public float[] Bump { set { _bump = value; } }
 
+        private readonly bool _imageMode, _foldShading;
+        private readonly float _texturePad;
+        private readonly SurfaceFragments[] _fragmentBands;
         private readonly Cloth _cloth;
         private readonly int _dx, _dy;              // size of the smoothed surface (points)
         private readonly float[] _vx, _vy, _vz, _shadeF, _shadeB, _tx, _ty;
@@ -59,8 +62,10 @@ namespace AladdinRug
         /// <param name="w">Width of the output in pixels.</param>
         /// <param name="scale">Pixels per DIP.</param>
         /// <param name="texPadPx">Transparent margin around the rug in the textures, in pixels.</param>
-        public ClothRenderer(Cloth cloth, int w, int h, float scale, byte[] face, byte[] back, int texW, int texH, float texPadPx)
+        public ClothRenderer(Cloth cloth, int w, int h, float scale, byte[] face, byte[] back, int texW, int texH, float texPadPx, bool imageMode = false, bool foldShading = true)
         {
+            _imageMode = imageMode; _foldShading = foldShading; _texturePad = texPadPx;
+            _fragmentBands = imageMode ? new SurfaceFragments[h / 16 + 2] : null;
             _cloth = cloth; _w = w; _h = h; _stride = w * 4; _scale = scale;
             _face = face; _back = back; _tw = texW; _th = texH;
             _height = new float[w * h];
@@ -109,11 +114,11 @@ namespace AladdinRug
         /// Draws a snapshot of the cloth. <paramref name="previous"/> is where this particular buffer was last drawn into
         /// (so only that has to be wiped); returns the area drawn this time.
         /// </summary>
-        public Int32Rect Draw(byte[] dst, ref Int32Rect previous, float[] sx, float[] sy, float[] sz, DustView dust = null)
+        public Int32Rect Draw(byte[] dst, ref Int32Rect previous, float[] sx, float[] sy, float[] sz, DustView dust = null, SurfaceHitMap hitMap = null)
         {
             long clock = Tick();
             Int32Rect box = Smooth(sx, sy, sz);
-            bool dusty = dust != null && dust.Count > 0;
+            bool dusty = !_imageMode && dust != null && dust.Count > 0;
             if (dusty) box = Union(box, Dust.Bounds(dust, _scale, _w, _h));
             Profile[0] += Ms(clock); clock = Tick();
 
@@ -122,6 +127,7 @@ namespace AladdinRug
             Int32Rect wipeHeights = Union(_heightBox, box);
             Parallel.For(wipe.Y, wipe.Y + wipe.Height, y => Array.Clear(dst, y * _stride + wipe.X * 4, wipe.Width * 4));
             Parallel.For(wipeHeights.Y, wipeHeights.Y + wipeHeights.Height, y => Array.Clear(_height, y * _w + wipeHeights.X, wipeHeights.Width));
+            hitMap?.Begin(box);
             Profile[1] += Ms(clock); clock = Tick();
 
             BuildTriangles();
@@ -135,11 +141,19 @@ namespace AladdinRug
             Parallel.For(0, bands, b =>
             {
                 int y0 = box.Y + b * bandRows, y1 = Math.Min(box.Y + box.Height, y0 + bandRows);
-                DrawBand(dst, y0, y1);
+                SurfaceFragments fragments = null;
+                if (_imageMode)
+                {
+                    fragments = _fragmentBands[b] ??= new SurfaceFragments();
+                    fragments.Begin(_w, y0, y1 - y0);
+                }
+                DrawBand(dst, y0, y1, fragments);
+                fragments?.Composite(dst, hitMap);
             });
             Profile[3] += Ms(clock); clock = Tick();
 
-            CastShadows(dst, box);
+            // Image lighting changes RGB only. The opaque height-map shadow would fill transparent holes.
+            if (!_imageMode) CastShadows(dst, box);
             Profile[4] += Ms(clock);
 
             if (dusty)                                              // dust last, and never over the rug: it comes from underneath
@@ -238,7 +252,7 @@ namespace AladdinRug
                 }
             });
 
-            int margin = (int)(ShadowReach * _scale);
+            int margin = _imageMode ? 2 : (int)(ShadowReach * _scale);
             int x0 = Math.Max(0, (int)minX - margin), y0 = Math.Max(0, (int)minY - margin);
             int x1 = Math.Min(_w, (int)maxX + margin + 1), y1 = Math.Min(_h, (int)maxY + margin + 1);
             return new Int32Rect(x0, y0, Math.Max(0, x1 - x0), Math.Max(0, y1 - y0));
@@ -280,7 +294,7 @@ namespace AladdinRug
 
         // ------------------------------------------------------------------ drawing
 
-        private void DrawBand(byte[] dst, int y0, int y1)
+        private void DrawBand(byte[] dst, int y0, int y1, SurfaceFragments fragments)
         {
             fixed (byte* d = dst)
             fixed (float* hb = _height)
@@ -291,12 +305,12 @@ namespace AladdinRug
                 for (int t = 0; t < _triCount; t++)
                 {
                     if (_tMaxY[t] < y0 || _tMinY[t] >= y1) continue;
-                    DrawTriangle(d, hb, _tBack[t] ? backTex : faceTex, t, y0, y1, bump);
+                    DrawTriangle(d, hb, _tBack[t] ? backTex : faceTex, t, y0, y1, bump, fragments);
                 }
             }
         }
 
-        private void DrawTriangle(byte* dst, float* height, byte* tex, int t, int rowFrom, int rowTo, float* bump)
+        private void DrawTriangle(byte* dst, float* height, byte* tex, int t, int rowFrom, int rowTo, float* bump, SurfaceFragments fragments)
         {
             int ia = _ta[t], ib = _tb[t], ic = _tc[t];
             float ax = _vx[ia], ay = _vy[ia], bx = _vx[ib], by = _vy[ib], cx = _vx[ic], cy = _vy[ic];
@@ -338,7 +352,7 @@ namespace AladdinRug
 
                     float z = na * za + nb * zb + nc * zc;
                     float* hp = height + y * _w + x;
-                    if (z < *hp - 0.5f) continue;                  // hidden behind a higher bit of rug
+                    if (!_imageMode && z < *hp - 0.5f) continue;                  // hidden behind a higher bit of rug
 
                     float fx = na * ua + nb * ub + nc * uc - 0.5f, fy = na * va + nb * vb + nc * vc - 0.5f;
                     int x0 = fx >= 0 ? (int)fx : (int)fx - 1, y0 = fy >= 0 ? (int)fy : (int)fy - 1;
@@ -355,7 +369,8 @@ namespace AladdinRug
                     if (a < 1f) continue;
 
                     float lit = na * sa + nb * sb + nc * sc;
-                    if (bump != null)                              // lying over lumps: they show through, less so the higher the rug is lifted
+                    if (_imageMode) lit = _foldShading ? Math.Clamp(lit / (Ambient + Diffuse * Lz), 0f, 1.15f) : 1f;
+                    if (!_imageMode && bump != null)                              // lying over lumps: they show through, less so the higher the rug is lifted
                     {
                         float bs = bump[y * _w + x];
                         if (bs != 0f) lit *= 1f + bs * (z < Cloth.Floor + 8f ? 1f : Math.Max(0f, 1f - (z - Cloth.Floor - 8f) * 0.1f));
@@ -365,6 +380,13 @@ namespace AladdinRug
                     float r = (p00[2] * w00 + p10[2] * w10 + p01[2] * w01 + p11[2] * w11) * lit;
                     if (b > a) b = a; if (g > a) g = a; if (r > a) r = a;
 
+                    if (fragments != null)
+                    {
+                        int gi = Math.Clamp((int)MathF.Round((fx + 0.5f - _texturePad) / (_tw - 2 * _texturePad) * (_cloth.Nx - 1)), 0, _cloth.Nx - 1);
+                        int gj = Math.Clamp((int)MathF.Round((fy + 0.5f - _texturePad) / (_th - 2 * _texturePad) * (_cloth.Ny - 1)), 0, _cloth.Ny - 1);
+                        fragments.Add(x, y, z, b, g, r, a, gj * _cloth.Nx + gi);
+                        continue;
+                    }
                     byte* o = dst + y * _stride + x * 4;
                     float keep = 1f - a * (1f / 255f);
                     o[0] = (byte)(b + o[0] * keep);

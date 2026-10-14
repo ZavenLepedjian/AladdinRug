@@ -44,6 +44,7 @@ To work on it, open `AladdinRug.sln` in Visual Studio 2022 (or use `dotnet build
 | Roll it up / out | Double-click it, press **Ctrl+Alt+R**, or click the tray icon. A rolled rug stays on the desktop, tied with two straps; click the roll to unroll it, drag it to move it |
 | Hide icons under it | Drag an icon (or a whole selection) and drop it on the rug: the drop goes through to the desktop, so the icon simply stays there, hidden |
 | Change the rug | Right-click the rug or tray icon, **Rug style**: Persian (heavy wool), Kilim (thin, floppy), Shaggy (deep pile, grippy) or Doormat (small, stiff, "NOTHING TO SEE HERE"). Each has its own weight and stiffness |
+| Use an image | **Custom image > Choose a PNG or JPEG...**. It keeps its colors, transparency and aspect ratio. **Shade the folds** adds lighting; **Clear image: use built-in rug** restores the selected style |
 | Aladdin | **Aladdin on the rug** puts a small Aladdin on it, sitting cross-legged with his lamp. He's part of the rug's picture, so he moves and folds with it |
 | The merchant | **A merchant rolls the rug**: he walks in, crouches at the end of the rug and pushes the roll along, ties the straps, claps the dust off and leaves. Press the shortcut again to skip to the end; turn it off for a quick roll |
 | Sort the desktop | **Merchant: sort the desktop files into folders**. After you confirm, he makes a folder per file type ("PDF files", "Shortcuts"... a type with only one file goes into "Other files") and carries the loose files into them, one to five at a time. Choose it again to make him finish at once |
@@ -51,6 +52,11 @@ To work on it, open `AladdinRug.sln` in Visual Studio 2022 (or use `dotnet build
 | Undo | **Undo: put the sorted files back** and **Pull everything out from under the rug** |
 | Every start | **Sort the desktop when the rug starts**: once the rug is out, the merchant sorts the loose files into folders. Asked once on first start. Only sorting happens by default; **...and then sweep the folders under the rug** adds the sweep and is off until you switch it on |
 | Quit | **Take the rug away**. Whatever was swept under the rug comes back out |
+
+Custom images use the default rug area. **Cloth feel** changes their weight and stiffness without changing image size or lighting.
+There is no fringe, backing, weave, Aladdin, dust, strap or opaque shadow added to an image. The merchant and desktop actions
+remain available. Finish a drag, roll or merchant job before replacing or clearing an image. See [custom images](docs/CUSTOM_IMAGES.md)
+for file limits, storage and validation details.
 
 ![Picking the rug up](docs/images/cloth.jpg)
 
@@ -100,6 +106,8 @@ AladdinRug.exe --pullout
 | File | What it holds |
 | --- | --- |
 | `%APPDATA%\AladdinRug\settings.txt` | `style`, `aladdin`, `roller` (the merchant rolls the rug), `autotidy` (sort at start), `autosweep` (sweep at start; off by default) |
+| `%APPDATA%\AladdinRug\image\texture.image` | The validated PNG/JPEG bytes, copied from your chosen file; the source path is not saved |
+| `%APPDATA%\AladdinRug\image\fold-shading.txt` | Image lighting (`on` or `off`); separate from the rug style, off by default |
 | `%APPDATA%\AladdinRug\positions.txt` | Where each monitor's rug lies and whether it's rolled. Delete it to put the rugs back in the middle |
 | `%APPDATA%\AladdinRug\organized.txt` | The undo list for sorting |
 | `%APPDATA%\AladdinRug\swept.txt` | What is under the rug, and where each icon was |
@@ -114,6 +122,15 @@ This project used to be called *DesktopRug*, then *AlaaddinRug*. The first time 
 `%APPDATA%` and `%LOCALAPPDATA%` folders (settings, where the rug lies, the undo lists, the log) to the new names, and
 re-makes a "Start with Windows" entry under the new name, so nothing is lost. Close the old copy first, and delete the old
 folder it was built in once you've moved to the new one.
+
+### Check image import and rendering
+
+```bash
+AladdinRug.exe --imagecheck path-to-test-output
+```
+
+This runs synthetic PNG/JPEG, alpha, lighting, persistence and cloth-picking checks. It creates a new fixture subdirectory
+under the supplied output path and does not create a desktop window or run the merchant. Do not combine it with `--style`.
 
 ## How it works
 

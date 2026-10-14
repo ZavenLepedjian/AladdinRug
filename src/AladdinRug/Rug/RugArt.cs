@@ -47,9 +47,9 @@ namespace AladdinRug
         // s sizes the artwork (monitor DPI); layoutScale is how many pixels WPF thinks a DIP is on the window
         // that will show it, so the bitmap lands on the screen 1:1.
         /// <summary>Where the woven part of the rug sits inside its window: inset for the fringe and shadow margin.</summary>
-        public static Rect BodyRect(int pw, int ph, double s)
+        public static Rect BodyRect(int pw, int ph, double s, bool image = false)
         {
-            double padX = (FringeDip + PadDip) * s, padY = PadDip * s;
+            double padX = ((image ? 0 : FringeDip) + PadDip) * s, padY = PadDip * s;
             return new Rect(padX, padY, pw - 2 * padX, ph - 2 * padY);
         }
 
@@ -57,7 +57,7 @@ namespace AladdinRug
         /// face and its dull underside without any shadow (for the cloth, which casts its own).</summary>
         internal sealed class Images
         {
-            public BitmapSource Front;
+            public BitmapSource Front, Roll;
             public byte[] FacePx, BackPx;      // premultiplied BGRA, TexW x TexH
             public int TexW, TexH;
         }
