@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.IO;
 using System.Windows.Threading;
 using Microsoft.Win32;
 
@@ -13,6 +14,12 @@ namespace AladdinRug
         private readonly DispatcherTimer _displayDebounce = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(900) };
         private List<DeskGeometry> _layout = new List<DeskGeometry>();
         private bool _quitting;
+        private readonly TextureStore _image = new TextureStore(Path.Combine(AppFolders.Roaming, "image"));
+        public bool UsingImage => _image.Current != null;
+        public bool HasStoredImage => _image.HasStoredImage;
+        public bool ImageFoldShading => _image.FoldShading;
+        public bool CanChangeImage => !_quitting && _rugs.All(r => r.CanChangeAppearance);
+        private const string ImageBusy = "Finish dragging, rolling or the merchant's current job before changing the image.";
 
         public event Action ContextRequested;
         public event Action<string> Notice;
@@ -26,7 +33,39 @@ namespace AladdinRug
             SystemEvents.DisplaySettingsChanged += OnDisplaySettingsChanged;
         }
 
-        public void Begin() => Create(null);
+        public void Begin()
+        {
+            Create(null);
+            if (_image.LoadError != null) Notice?.Invoke(_image.LoadError);
+        }
+
+        public bool ImportImage(string path, out string error)
+        {
+            if (!CanChangeImage) { error = ImageBusy; return false; }
+            if (!_image.TryImport(path, out error)) return false;
+            Rebuild(() => { }, saveStyle: false);
+            return true;
+        }
+
+        public bool ClearImage(out string error)
+        {
+            if (!CanChangeImage) { error = ImageBusy; return false; }
+            bool restoring = UsingImage;
+            if (restoring)
+                foreach (RugWindow rug in _rugs)
+                    if (!rug.CanRestoreBuiltin(out error)) return false;
+            if (!_image.TryClear(out error)) return false;
+            if (restoring) Rebuild(() => { }, saveStyle: false);
+            return true;
+        }
+
+        public bool SetImageFoldShading(bool on, out string error)
+        {
+            if (!CanChangeImage) { error = ImageBusy; return false; }
+            if (!_image.TrySetFoldShading(on, out error)) return false;
+            Rebuild(() => { }, saveStyle: false);
+            return true;
+        }
         public void Toggle() { if (IsRolled) Unroll(); else RollUp(); }
         public void RollUp() { foreach (RugWindow r in _rugs) r.RollUp(); }
         public void Unroll() { foreach (RugWindow r in _rugs) r.Unroll(); }
@@ -101,6 +140,7 @@ namespace AladdinRug
         public void SetStyle(RugStyle style)
         {
             if (_rugs.Count > 0 && style == RugStyles.Current) return;
+            if (UsingImage && !CanChangeImage) { Notice?.Invoke(ImageBusy); return; }
             Rebuild(() => RugStyles.Current = style);
         }
 
@@ -111,12 +151,12 @@ namespace AladdinRug
             Rebuild(() => RugStyles.Aladdin = on);
         }
 
-        private void Rebuild(Action change)
+        private void Rebuild(Action change, bool saveStyle = true)
         {
             var centres = new List<(int x, int y)?>();
             foreach (RugWindow r in _rugs) centres.Add(r.SaveAndGetCentre());
             change();
-            RugStyles.Save();
+            if (saveStyle) RugStyles.Save();
             Clear();
             Create(centres);
         }
@@ -127,7 +167,7 @@ namespace AladdinRug
             for (int i = 0; i < _layout.Count; i++)
             {
                 DeskGeometry geo = _layout[i];
-                var rug = new RugWindow(geo, RugStyles.Current, centres != null && i < centres.Count ? centres[i] : null);
+                var rug = new RugWindow(geo, RugStyles.Current, centres != null && i < centres.Count ? centres[i] : null, _image.Current, _image.FoldShading);
                 rug.ContextRequested += () => ContextRequested?.Invoke();
                 rug.Notice += m => Notice?.Invoke(m);
                 rug.TidyDone += OnTidyDone;

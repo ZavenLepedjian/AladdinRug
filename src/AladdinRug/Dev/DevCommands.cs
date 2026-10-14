@@ -10,6 +10,7 @@ namespace AladdinRug
     ///   AladdinRug.exe --merchant out.png              (a sheet of the merchant's poses)
     ///   AladdinRug.exe --simtest folder [scenario]     (cloth scenarios: middle, tent, corner, edge, drag)
     ///   AladdinRug.exe --collisiontest report.txt      (synthetic collision checks, no windows or desktop access)
+    ///   AladdinRug.exe --imagecheck folder             (synthetic image checks; no desktop window)
     ///   AladdinRug.exe --selftest report.txt           (a temporary rug on the desktop, timing how smoothly it runs)
     /// </code>
     /// </summary>
@@ -20,6 +21,13 @@ namespace AladdinRug
         {
             switch (args[0])
             {
+                case "--imagecheck":
+                    if (args.Length != 2)
+                    {
+                        System.Console.Error.WriteLine("Usage: AladdinRug.exe --imagecheck folder");
+                        return 2;
+                    }
+                    return ImageChecks.Run(args[1]);
                 case "--preview" when args.Length >= 3:
                     new RugWindow(DeskGeometry.Primary()).RenderPreview(args[1], args[2]);
                     return 0;

@@ -138,12 +138,13 @@ namespace AladdinRug
         // ------------------------------------------------------------------ the hand
 
         /// <summary>Pinch the top-most bit of rug under (mx, my). Returns false if there is none.</summary>
-        public bool Grab(float mx, float my)
+        public bool Grab(float mx, float my, int surfaceNode = -1)
         {
             float reach = Math.Max(Sx, Sy) * 1.05f;
-            int best = -1;
-            float bestZ = float.MinValue;
-            for (int i = 0; i < Count; i++)
+            if (surfaceNode < -1 || surfaceNode >= Count) return false;
+            int best = surfaceNode;
+            float bestZ = best >= 0 ? Z[best] : float.MinValue;
+            if (surfaceNode < 0) for (int i = 0; i < Count; i++)
             {
                 float dx = X[i] - mx, dy = Y[i] - my;
                 if (dx * dx + dy * dy < reach * reach && Z[i] > bestZ) { bestZ = Z[i]; best = i; }
@@ -156,8 +157,10 @@ namespace AladdinRug
             for (int i = 0; i < Count; i++)
             {
                 float dx = X[i] - mx, dy = Y[i] - my;
-                if (dx * dx + dy * dy < patch * patch && Z[i] > bestZ - Layer * 0.9f) idx.Add(i);
+                if (dx * dx + dy * dy < patch * patch && (surfaceNode >= 0 ? Math.Abs(Z[i] - bestZ) < Layer * 0.9f : Z[i] > bestZ - Layer * 0.9f)) idx.Add(i);
             }
+            // An uploaded image can lag the physics. Always include its selected surface.
+            if (surfaceNode >= 0 && !idx.Contains(best)) idx.Add(best);
             var held = idx.ToArray();
             var offX = new float[held.Length]; var offY = new float[held.Length]; var z0 = new float[held.Length]; var fall = new float[held.Length];
             for (int n = 0; n < held.Length; n++)

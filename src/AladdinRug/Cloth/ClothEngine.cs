@@ -26,6 +26,9 @@ namespace AladdinRug
         private readonly Dispatcher _ui;
         private readonly Action<Int32Rect, byte[]> _upload;       // called on the window's thread: copy this area of this picture to the screen
         private readonly int _count;
+        private readonly float _pixelScale;
+        private readonly SurfaceHitMap[] _hitBuffers;
+        private readonly SurfaceHitMap _shownHits;
 
         // physics <-> drawing
         private readonly object _clothLock = new object();         // a physics step, or a change from the mouse (grab, release, flatten)
@@ -56,13 +59,19 @@ namespace AladdinRug
         private long _lastUploadTick;
 
         public ClothEngine(Cloth cloth, int w, int h, float scale, byte[] face, byte[] back, int texW, int texH, float texPad,
-                           Dispatcher ui, Action<Int32Rect, byte[]> upload)
+                           Dispatcher ui, Action<Int32Rect, byte[]> upload, bool imageMode = false, bool foldShading = true)
         {
             Cloth = cloth;
             _ui = ui;
             _upload = upload;
             _count = cloth.Count;
-            _renderer = new ClothRenderer(cloth, w, h, scale, face, back, texW, texH, texPad);
+            _pixelScale = scale;
+            if (imageMode)
+            {
+                _shownHits = new SurfaceHitMap();
+                _hitBuffers = new[] { new SurfaceHitMap(), new SurfaceHitMap(), new SurfaceHitMap() };
+            }
+            _renderer = new ClothRenderer(cloth, w, h, scale, face, back, texW, texH, texPad, imageMode, foldShading);
 
             _snapX = new float[_count]; _snapY = new float[_count]; _snapZ = new float[_count];
             _drawX = new float[_count]; _drawY = new float[_count]; _drawZ = new float[_count];
@@ -84,9 +93,10 @@ namespace AladdinRug
         {
             lock (_clothLock) Cloth.CopyPositions(_drawX, _drawY, _drawZ);
             _dust.CopyTo(_showView);
-            Int32Rect box = _renderer.Draw(_buffers[0], ref _drawnInto[0], _drawX, _drawY, _drawZ, _showView);
+            Int32Rect box = _renderer.Draw(_buffers[0], ref _drawnInto[0], _drawX, _drawY, _drawZ, _showView, _hitBuffers?[0]);
             _lastDrawn = 0;
             _upload(Union(_shownBox, box), _buffers[0]);
+            PresentHits(0);
             _shownBox = box;
         }
 
@@ -95,10 +105,23 @@ namespace AladdinRug
 
         public bool Grab(float x, float y)
         {
+            int node = SurfaceNode(x, y);
+            if (_shownHits != null && node < 0) return false;
             bool got;
-            lock (_clothLock) got = Cloth.Grab(x, y);
+            lock (_clothLock) got = Cloth.Grab(x, y, node);
             if (got) Wake();
             return got;
+        }
+
+        public bool HasSurfaceAt(float x, float y) => _shownHits == null || SurfaceNode(x, y) >= 0;
+
+        private int SurfaceNode(float x, float y) => _shownHits == null ? -1
+            : _shownHits.NodeAt((int)Math.Floor(x * _pixelScale), (int)Math.Floor(y * _pixelScale));
+
+        private void PresentHits(int buffer)
+        {
+            // UI thread only, paired with the uploaded picture; never expose a buffer being drawn into.
+            if (_shownHits != null) _shownHits.CopyFrom(_hitBuffers[buffer]);
         }
 
         public void MoveHand(float x, float y)
@@ -234,7 +257,7 @@ namespace AladdinRug
 
                 _dust.CopyTo(_dustView);
                 long t0 = Stopwatch.GetTimestamp();
-                Int32Rect box = _renderer.Draw(_buffers[b], ref _drawnInto[b], _drawX, _drawY, _drawZ, _dustView);
+                Int32Rect box = _renderer.Draw(_buffers[b], ref _drawnInto[b], _drawX, _drawY, _drawZ, _dustView, _hitBuffers?[b]);
                 StatDraw?.Add((Stopwatch.GetTimestamp() - t0) * 1000.0 / Stopwatch.Frequency);
 
                 lock (_frameLock) { _ready = b; _readyBox = box; _lastDrawn = b; }
@@ -265,6 +288,7 @@ namespace AladdinRug
             {
                 // what is on screen now is the previous picture, so the area to update covers both
                 _upload(Union(_shownBox, box), _buffers[b]);
+                PresentHits(b);
                 _shownBox = box;
             }
             finally

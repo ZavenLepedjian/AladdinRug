@@ -14,6 +14,8 @@ namespace AladdinRug
         private readonly WF.ContextMenuStrip _menu = new WF.ContextMenuStrip();
         private readonly WF.ToolStripMenuItem _toggle, _startup, _styles, _aladdin, _roller, _broom, _pullOut, _tidy, _untidy, _autoTidy, _autoSweep;
 
+        private readonly WF.ToolStripMenuItem _chooseImage, _clearImage, _imageLighting;
+
         public TrayIcon(RugSet rug, Action quit)
         {
             _rug = rug;
@@ -29,6 +31,21 @@ namespace AladdinRug
                 item.Click += (s, e) => _rug.SetStyle((RugStyle)item.Tag);
                 _styles.DropDownItems.Add(item);
             }
+
+            var imageMenu = new WF.ToolStripMenuItem("Custom image");
+            _chooseImage = new WF.ToolStripMenuItem("Choose a PNG or JPEG...", null, (s, e) => ChooseImage());
+            _clearImage = new WF.ToolStripMenuItem("Clear image: use built-in rug", null, (s, e) =>
+            {
+                _rug.ClearImage(out string error);
+                ImageError(error);
+            });
+            _imageLighting = new WF.ToolStripMenuItem("Shade the folds") { ToolTipText = "Off preserves the image colors; on adds only fold lighting. Transparency is kept." };
+            _imageLighting.Click += (s, e) =>
+            {
+                _rug.SetImageFoldShading(!_rug.ImageFoldShading, out string error);
+                ImageError(error);
+            };
+            imageMenu.DropDownItems.AddRange(new WF.ToolStripItem[] { _chooseImage, _clearImage, _imageLighting });
 
             _aladdin = new WF.ToolStripMenuItem("Aladdin on the rug") { CheckOnClick = true };
             _aladdin.Click += (s, e) => _rug.SetAladdin(_aladdin.Checked);
@@ -53,6 +70,7 @@ namespace AladdinRug
             _menu.Items.Add(_broom);
             _menu.Items.Add(_pullOut);
             _menu.Items.Add(_styles);
+            _menu.Items.Add(imageMenu);
             _menu.Items.Add(_aladdin);
             _menu.Items.Add(_roller);
             _menu.Items.Add(_autoTidy);
@@ -71,6 +89,27 @@ namespace AladdinRug
             };
             _icon.MouseClick += (s, e) => { if (e.Button == WF.MouseButtons.Left) _rug.Toggle(); };
             _rug.Notice += msg => _icon.ShowBalloonTip(5000, "Aladdin Rug", msg, WF.ToolTipIcon.Warning);
+        }
+
+        private void ChooseImage()
+        {
+            using var dialog = new WF.OpenFileDialog
+            {
+                Title = "Choose a rug image",
+                Filter = "PNG or JPEG images|*.png;*.jpg;*.jpeg",
+                CheckFileExists = true,
+                Multiselect = false,
+                RestoreDirectory = true,
+            };
+            if (dialog.ShowDialog() != WF.DialogResult.OK) return;
+            // A modal picker pumps messages; check the job state again inside ImportImage before saving.
+            _rug.ImportImage(dialog.FileName, out string error);
+            ImageError(error);
+        }
+
+        private void ImageError(string error)
+        {
+            if (error != null) _icon.ShowBalloonTip(5000, "Aladdin Rug", error, WF.ToolTipIcon.Warning);
         }
 
         // Sorting moves real files, so ask first (the test hook RUG_ORGANIZE_ONLY skips the question).
@@ -118,6 +157,12 @@ namespace AladdinRug
             _toggle.Text = _rug.IsRolled ? "Unroll the rug" : "Roll up the rug";
             _startup.Checked = StartupEntry.Enabled;
             _aladdin.Checked = RugStyles.Aladdin;
+            _aladdin.Enabled = !_rug.UsingImage;
+            _styles.Text = _rug.UsingImage ? "Cloth feel" : "Rug style";
+            _chooseImage.Enabled = _rug.CanChangeImage;
+            _clearImage.Enabled = _rug.CanChangeImage && _rug.HasStoredImage;
+            _imageLighting.Enabled = _rug.CanChangeImage && _rug.UsingImage;
+            _imageLighting.Checked = _rug.ImageFoldShading;
             _autoTidy.Checked = RugStyles.AutoTidy == true;
             _autoSweep.Checked = RugStyles.AutoSweep;
             _autoSweep.Enabled = _autoTidy.Checked;

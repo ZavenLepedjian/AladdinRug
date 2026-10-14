@@ -62,6 +62,17 @@ namespace AladdinRug
         private bool _quitting, _initializing = true;
         private RugArt.Images _art;
         private readonly StyleSpec _spec;
+        private readonly BitmapSource _texture;
+        private readonly bool _imageFoldShading;
+        private byte[] _rollPixels;
+
+        // Appearance changes rebuild windows. Never finish/abort a live desktop job as a side effect.
+        internal bool CanChangeAppearance => !_quitting && !_holding && !_rollPressed && !_flattening && !_pendingRoll
+            && !_pendingSweep && !_pendingTidy && _sweep == null && _tidy == null && (_roller == null || !_roller.Active)
+            && State != RugState.Rising && State != RugState.Falling;
+
+        internal bool CanRestoreBuiltin(out string error) =>
+            RugArt.CanRestoreBuiltin(_geo.W, _geo.H, _geo.Scale, _wpf, _spec.Style, out error);
 
         // ---- the broom: sweeping the desktop's icons under the rug, and the lumps they make
         private SweepJob _sweep;
@@ -112,18 +123,19 @@ namespace AladdinRug
 
         // Margins inside the rug's window, in DIPs of this window (the art is drawn at the monitor's scale).
         private double PadDip => RugArt.PadDip * _geo.Scale / _wpf;
-        private double FringeDip => RugArt.FringeDip * _geo.Scale / _wpf;
+        private double FringeDip => _texture == null ? RugArt.FringeDip * _geo.Scale / _wpf : 0;
 
         public RugWindow(DeskGeometry geo) : this(geo, RugStyles.Current, null) { }
 
         /// <param name="centre">Where the old rug's middle was (screen pixels), when this one is replacing it.</param>
-        public RugWindow(DeskGeometry geo, RugStyle style, (int x, int y)? centre)
+        public RugWindow(DeskGeometry geo, RugStyle style, (int x, int y)? centre, BitmapSource texture = null, bool imageFoldShading = false)
         {
             _geo = geo;
+            _texture = texture; _imageFoldShading = imageFoldShading;
             _spec = RugStyles.Get(style);
             _flatDust = new Dust((float)geo.Scale);
-            _rugW = Math.Max(400, (int)(geo.W * RugArt.DefaultWidthFraction * _spec.WidthFactor));
-            _rugH = Math.Max(300, (int)(geo.H * RugArt.DefaultHeightFraction * _spec.HeightFactor));
+            _rugW = Math.Max(400, (int)(geo.W * RugArt.DefaultWidthFraction * (_texture == null ? _spec.WidthFactor : 1)));
+            _rugH = Math.Max(300, (int)(geo.H * RugArt.DefaultHeightFraction * (_texture == null ? _spec.HeightFactor : 1)));
             if (RugPositions.TryGet(geo, out int dx, out int dy, out bool rolled)) { _rugX = geo.X + dx; _rugY = geo.Y + dy; _startRolled = rolled; }
             else { _rugX = geo.X + (geo.W - _rugW) / 2; _rugY = geo.Y + (geo.H - _rugH) / 2; }
             if (centre.HasValue && !_startRolled) { _rugX = centre.Value.x - _rugW / 2; _rugY = centre.Value.y - _rugH / 2; }
@@ -151,7 +163,7 @@ namespace AladdinRug
             MouseMove += OnMouseMove;
             MouseLeftButtonUp += (s, e) => OnMouseUp(true);
             LostMouseCapture += (s, e) => OnMouseUp(false);
-            MouseRightButtonUp += (s, e) => { ContextRequested?.Invoke(); e.Handled = true; };
+            MouseRightButtonUp += (s, e) => { if (VisibleSurfaceAt(e.GetPosition(_content))) { ContextRequested?.Invoke(); e.Handled = true; } };
 
             SweptStore.Changed += OnSweptChanged;
             _frames.Tick += (s, e) => OnFrame();
@@ -197,8 +209,8 @@ namespace AladdinRug
             {
                 EdgeX = _rugX + edge * _wpf,
                 Radius = RollRadius(length * p) * _wpf,
-                Top = _rugY + (PadDip - 2) * _wpf,
-                Height = (_heightDip - 2 * PadDip + 4) * _wpf,
+                Top = _rugY + (PadDip - (_texture == null ? 2 : 0)) * _wpf,
+                Height = (_heightDip - 2 * PadDip + (_texture == null ? 4 : 0)) * _wpf,
             };
         }
 
@@ -278,6 +290,7 @@ namespace AladdinRug
 
         private void OnMouseDown(object sender, MouseButtonEventArgs e)
         {
+            if (!VisibleSurfaceAt(e.GetPosition(_content))) return;
             if (State == RugState.Up)                       // a click on the roll unrolls it; a drag moves it
             {
                 Native.GetCursorPos(out _pressCursor);
@@ -301,6 +314,24 @@ namespace AladdinRug
                 CaptureMouse();
             }
         }
+
+        private bool VisibleSurfaceAt(Point p)
+        {
+            if (_texture == null) return true;
+            if (_engine != null) return _engine.HasSurfaceAt((float)p.X, (float)p.Y);
+            if (_roll.Visibility == Visibility.Visible && _roll.Width > 0)
+            {
+                double x = (p.X - Canvas.GetLeft(_roll)) / _roll.Width;
+                double y = (p.Y - Canvas.GetTop(_roll)) / _roll.Height;
+                if (x >= 0 && x < 1 && y >= 0 && y < 1 && AlphaAt(_rollPixels, _art.Roll.PixelWidth, _art.Roll.PixelHeight,
+                    (int)(x * _art.Roll.PixelWidth), (int)(y * _art.Roll.PixelHeight))) return true;
+            }
+            if (_front.Clip != null && !_front.Clip.FillContains(p)) return false;
+            return AlphaAt(_art.FacePx, _rugW, _rugH, (int)Math.Floor(p.X * _wpf), (int)Math.Floor(p.Y * _wpf));
+        }
+
+        private static bool AlphaAt(byte[] pixels, int width, int height, int x, int y) =>
+            pixels != null && x >= 0 && y >= 0 && x < width && y < height && pixels[(y * width + x) * 4 + 3] > 0;
 
         private void OnMouseMove(object sender, MouseEventArgs e)
         {
@@ -403,7 +434,7 @@ namespace AladdinRug
 
             _engine = new ClothEngine(cloth, _geo.W, _geo.H, (float)_wpf, _art.FacePx, _art.BackPx, _art.TexW, _art.TexH,
                                       (float)(RugArt.PadDip * _geo.Scale), Dispatcher,
-                                      (area, picture) => _clothBitmap.WritePixels(area, picture, _geo.W * 4, area.X, area.Y));
+                                      (area, picture) => _clothBitmap.WritePixels(area, picture, _geo.W * 4, area.X, area.Y), _texture != null, _imageFoldShading);
             _engine.Settled += () => SaveState();
 
             _engine.SetBump(_bumpShade);
@@ -496,7 +527,8 @@ namespace AladdinRug
             _heightDip = _rugH / _wpf;
             if (_initializing) { Width = _widthDip; Height = _heightDip; }   // later, the window is sized natively
 
-            _art = RugArt.RenderAll(_rugW, _rugH, _geo.Scale, _wpf, _spec.Style);
+            _art = _texture == null ? RugArt.RenderAll(_rugW, _rugH, _geo.Scale, _wpf, _spec.Style)
+                : RugArt.RenderImage(_rugW, _rugH, _geo.Scale, _wpf, _texture, _imageFoldShading);
             _dustBitmap = null;
             _dustBuf = null;
             _dustImage.Source = null;
@@ -516,15 +548,24 @@ namespace AladdinRug
             _front.Height = _heightDip;
             RenderOptions.SetBitmapScalingMode(_front, BitmapScalingMode.NearestNeighbor);
 
-            double rollTop = PadDip - 2, rollHeight = _heightDip - 2 * PadDip + 4;
+            double rollTop = PadDip - (_texture == null ? 2 : 0), rollHeight = _heightDip - 2 * PadDip + (_texture == null ? 4 : 0);
             _rollShadow.Height = rollHeight;
             _rollShadow.Background = new LinearGradientBrush(
                 Color.FromArgb(0x70, 0, 0, 0), Color.FromArgb(0, 0, 0, 0), new Point(0, 0), new Point(1, 0));
 
             _roll.Children.Clear();
             _roll.Height = rollHeight;
-            _roll.Children.Add(new Border { Background = MakeStripes(_spec.RollColors), CornerRadius = new CornerRadius(3) });
-            _roll.Children.Add(new Border { Background = MakeShading(), CornerRadius = new CornerRadius(3) });
+            if (_texture == null)
+            {
+                _roll.Children.Add(new Border { Background = MakeStripes(_spec.RollColors), CornerRadius = new CornerRadius(3) });
+                _roll.Children.Add(new Border { Background = MakeShading(), CornerRadius = new CornerRadius(3) });
+            }
+            else
+            {
+                _roll.Children.Add(new Image { Source = _art.Roll, Stretch = Stretch.Fill });
+                _rollPixels = new byte[_art.Roll.PixelWidth * _art.Roll.PixelHeight * 4];
+                _art.Roll.CopyPixels(_rollPixels, _art.Roll.PixelWidth * 4, 0);
+            }
 
             // Two straps tie the roll shut.
             foreach (Border strap in new[] { _strapA, _strapB })
@@ -896,7 +937,7 @@ namespace AladdinRug
 
         private void StartSweep()
         {
-            Rect b = RugArt.BodyRect(_rugW, _rugH, _geo.Scale);
+            Rect b = RugArt.BodyRect(_rugW, _rugH, _geo.Scale, _texture != null);
             var body = new Rect(_rugX + b.Left, _rugY + b.Top, b.Width, b.Height);
             SweepJob job = SweepJob.TryCreate(_geo, body, _hwnd, out string problem);
             if (job == null) { if (problem != null && !_quietJobs) Notice?.Invoke(problem); return; }
@@ -920,7 +961,7 @@ namespace AladdinRug
 
         private void UpdateBumpOverlay()
         {
-            if (_bumpShade == null || _art == null) { _bumpImage.Source = null; return; }
+            if (_texture != null || _bumpShade == null || _art == null) { _bumpImage.Source = null; return; }
             byte[] px = BumpField.Overlay(_bumpShade, _geo.W, _geo.H, _rugX - _geo.X, _rugY - _geo.Y, _rugW, _rugH, _art.FacePx);
             BitmapSource overlay = BitmapSource.Create(_rugW, _rugH, 96 * _wpf, 96 * _wpf, PixelFormats.Pbgra32, null, px, _rugW * 4);
             overlay.Freeze();
@@ -932,8 +973,8 @@ namespace AladdinRug
         // The rug has just come down: air pushed out from under it puffs out of every side.
         private void PuffFlat()
         {
-            if (_engine != null || _compact || TestMode) return;
-            Rect b = RugArt.BodyRect(_rugW, _rugH, _geo.Scale);
+            if (_texture != null || _engine != null || _compact || TestMode) return;
+            Rect b = RugArt.BodyRect(_rugW, _rugH, _geo.Scale, _texture != null);
             double gap = 20 * _geo.Scale;
             for (int side = 0; side < 4; side++)
             {
@@ -1105,10 +1146,13 @@ namespace AladdinRug
 
             bool rolling = t > 0.0005;
             Visibility v = rolling ? Visibility.Visible : Visibility.Collapsed;
-            _roll.Visibility = _rollShadow.Visibility = v;
-            _strapA.Visibility = _strapB.Visibility = straps > 0 ? Visibility.Visible : Visibility.Collapsed;
+            _roll.Visibility = v;
+            _rollShadow.Visibility = _texture == null ? v : Visibility.Collapsed;
+            _strapA.Visibility = _strapB.Visibility = _texture == null && straps > 0 ? Visibility.Visible : Visibility.Collapsed;
 
-            _front.Clip = rolling ? new RectangleGeometry(new Rect(0, 0, Math.Max(0.01, edge), _heightDip)) : null;
+            // The image roll replaces the covered flat pixels; do not double their translucent alpha.
+            double flatEdge = _texture == null ? edge : edge - RollRadius(length * p);
+            _front.Clip = rolling ? new RectangleGeometry(new Rect(0, 0, Math.Max(0.01, flatEdge), _heightDip)) : null;
             _bumpImage.Clip = _front.Clip;
             if (!rolling) return;
 
@@ -1142,7 +1186,7 @@ namespace AladdinRug
                 _rollAnim.Set(0);
                 ApplyProgress(0);
                 var blobs = new System.Collections.Generic.List<Blob>();
-                Rect body = RugArt.BodyRect(_rugW, _rugH, _geo.Scale);
+                Rect body = RugArt.BodyRect(_rugW, _rugH, _geo.Scale, _texture != null);
                 double cw = 95 * _geo.Scale, ch = 107 * _geo.Scale;
                 int n = 0;
                 for (double y = body.Top + 8; y + ch < body.Bottom - 6; y += ch)
